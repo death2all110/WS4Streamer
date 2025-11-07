@@ -82,7 +82,7 @@ async function startStream() {
             ...audio.options,
             '-i', audio.input,
 
-            '-filter_complex', '[0:v]format=yuv420p[v];[1:a]volume=0.5[a]',
+            '-filter_complex', '[0:v]scale=1280:720,format=yuv420p[v];[1:a]volume=0.5[a]',
 
             '-map', '[v]',
             '-map', '[a]',
