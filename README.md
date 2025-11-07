@@ -86,16 +86,19 @@ docker run -d --name ws-streamer -p 8000:8000 \
   -v "${FULL_MUSIC_PATH}:/home/pptruser/app/music" \
   ws4kp-streamer
 ```
-Variable,Description,Default
-BASE_URL,"(Required) The full public URL of this container, used for the IPTV playlist.",http://127.0.0.1:8000
-WS4KP_URL,(Required) The full URL to your ws4kp instance. Must include ?kiosk=true.,http://127.0.0.1:8080/?kiosk=true&settings-mediaPlaying-boolean=true
-HTTP_PORT,The internal port for the web server.,8000
-WIDTH,Video width for the stream.,640
-HEIGHT,Video height for the stream.,480
-FPS,Frames per second for the output stream.,25
-VIDEO_BITRATE,The output video bitrate.,2000k
-AUDIO_BITRATE,The output audio bitrate.,128k
-HLS_SEGMENT_TIME,Duration (in seconds) of each HLS video segment.,2
+### Environment Variables
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| **`BASE_URL`** | **(Required)** The full public URL of this container, used for the IPTV playlist. | `http://127.0.0.1:8000` |
+| **`WS4KP_URL`** | **(Required)** The full URL to your `ws4kp` instance. **Must** include `?kiosk=true`. | `http://127.0.0.1:8080/?kiosk=true&settings-mediaPlaying-boolean=true` |
+| `HTTP_PORT` | The internal port for the web server. | `8000` |
+| `CHANNEL_NUMBER` | The channel number for the IPTV stream. | `1234` |
+| `WIDTH` | Video width for the stream. | `1280` |
+| `HEIGHT` | Video height for the stream. | `720` |
+| `FPS` | Frames per second for the output stream. | `10` |
+| `VIDEO_BITRATE` | The output video bitrate. | `2000k` |
+| `AUDIO_BITRATE` | The output audio bitrate. | `128k` |
+| `HLS_SEGMENT_TIME`| Duration (in seconds) of each HLS video segment. | `2` |
 
 ### 6. Adding to Your IPTV Client (Plex, Jellyfin, etc.)
 
