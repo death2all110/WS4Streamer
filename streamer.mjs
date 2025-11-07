@@ -5,25 +5,22 @@ import path from 'path';
 import fs from 'fs';
 
 // --- Configuration ---
-// URL to your WeatherStar 4000+ instance.
-// IMPORTANT: Add URL parameters for kiosk mode and autoplay, as shown.
 const WS4KP_URL = process.env.WS4KP_URL || 'http://127.0.0.1:8080/?kiosk=true&settings-mediaPlaying-boolean=true';
 const HLS_DIR = path.resolve(process.env.HLS_DIR || './hls');
 const MUSIC_DIR = path.resolve(process.env.MUSIC_DIR || './music');
 const AUDIO_LIST_FILE = path.resolve('./audio_list.txt');
 
-// Video settings
-const WIDTH = 1280;
-const HEIGHT = 720;
-const FPS = 10;
-const VIDEO_BITRATE = '2000k';
-const AUDIO_BITRATE = '128k';
-const HLS_SEGMENT_TIME = 2; // Duration of each .ts segment in seconds
+const WIDTH = parseInt(process.env.WIDTH) || 640;
+const HEIGHT = parseInt(process.env.HEIGHT) || 480;
+const FPS = parseInt(process.env.FPS) || 25;
+const VIDEO_BITRATE = process.env.VIDEO_BITRATE || '2000k';
+const AUDIO_BITRATE = process.env.AUDIO_BITRATE || '128k';
+const HLS_SEGMENT_TIME = parseInt(process.env.HLS_SEGMENT_TIME) || 2;
 
 /**
- * Scans the MUSIC_DIR for mp3 files and generates an 'audio_list.txt'
- * for the ffmpeg concat demuxer.
- * @returns {object} FFmpeg input arguments for audio.
+ * Scans the MUSIC_DIR for mp3 files and generates an 'audio_list.txt'.
+ * If no files are found, it logs an error and returns null.
+ * @returns {object|null} FFmpeg input arguments or null on failure.
  */
 function getAudioInput() {
     console.log(`[Audio] Scanning for music in: ${MUSIC_DIR}`);
@@ -32,10 +29,10 @@ function getAudioInput() {
         fs.mkdirSync(MUSIC_DIR, { recursive: true });
         files = fs.readdirSync(MUSIC_DIR).filter(file => file.toLowerCase().endsWith('.mp3'));
     } catch (err) {
-        console.error(`[Audio] Could not read music directory: ${err.message}`);
+        console.error(`[Audio] CRITICAL: Could not read music directory: ${err.message}`);
+        return null;
     }
 
-    // If we found music files, create the concat list
     if (files.length > 0) {
         console.log(`[Audio] Found ${files.length} track(s).`);
         const audioList = files
@@ -49,54 +46,61 @@ function getAudioInput() {
             options: ['-f', 'concat', '-safe', '0', '-stream_loop', '-1']
         };
     }
+
+    console.error(`[Audio] CRITICAL: No .mp3 files were found in ${MUSIC_DIR}.`);
+    console.error('[Audio] Audio fallback is disabled. The streamer will not start.');
+    return null;
 }
 
 
 async function startStream() {
-    console.log(`[Streamer] Starting...`);
-    console.log(`[Streamer] Target URL: ${WS4KP_URL}`);
-    console.log(`[Streamer] HLS Output Dir: ${HLS_DIR}`);
-
-    fs.mkdirSync(HLS_DIR, { recursive: true });
-
-    const audio = getAudioInput();
-
+    let audio;
     let browser;
     let ffmpeg;
 
     try {
-        
+        console.log(`[Streamer] Starting...`);
+        console.log(`[Streamer] Target URL: ${WS4KP_URL}`);
+        console.log(`[Streamer] HLS Output Dir: ${HLS_DIR}`);
+
+        fs.mkdirSync(HLS_DIR, { recursive: true });
+
+        audio = getAudioInput();
+
+        if (!audio) {
+            console.error('[Streamer] Halting due to missing audio. Please add .mp3 files to the music directory.');
+            process.exit(1); 
+        }
+
         const ffmpegArgs = [
-            // Video Input
-            '-loglevel', 'error',      
-            '-f', 'image2pipe',        
-            '-framerate', `${FPS}`,    
+            '-loglevel', 'error',
+            '-f', 'image2pipe',
+            '-framerate', `${FPS}`,
             '-s', `${WIDTH}x${HEIGHT}`,
             '-i', 'pipe:0',
 
-            // Audio Input
             ...audio.options,
             '-i', audio.input,
-            
-            '-filter_complex',
-            '[0:v]format=yuv420p[v];[1:a]volume=0.5[a]',
+
+            '-filter_complex', '[0:v]format=yuv420p[v];[1:a]volume=0.5[a]',
 
             '-map', '[v]',
             '-map', '[a]',
-            // Output
-            '-c:v', 'libx264',     
-            '-pix_fmt', 'yuv420p', 
+
+            '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
-            '-b:v', VIDEO_BITRATE,      
+            '-b:v', VIDEO_BITRATE,
             '-g', `${FPS * HLS_SEGMENT_TIME}`,
+
             '-c:a', 'aac',
             '-b:a', AUDIO_BITRATE,
-            '-f', 'hls',                
-            '-hls_time', `${HLS_SEGMENT_TIME}`, 
-            '-hls_list_size', '5',     
-            '-hls_flags', 'delete_segments', 
-            path.join(HLS_DIR, 'stream.m3u8') 
+
+            '-f', 'hls',
+            '-hls_time', `${HLS_SEGMENT_TIME}`,
+            '-hls_list_size', '5',
+            '-hls_flags', 'delete_segments',
+            path.join(HLS_DIR, 'stream.m3u8')
         ];
 
         console.log(`[FFmpeg] Spawning: ${ffmpegPath} ${ffmpegArgs.join(' ')}`);
@@ -108,17 +112,17 @@ async function startStream() {
 
         ffmpeg.on('close', (code) => {
             console.log(`[FFmpeg] Process exited with code ${code}`);
-            process.exit(1); 
+            process.exit(1);
         });
 
-                console.log('[Puppeteer] Launching browser...');
+        console.log('[Puppeteer] Launching browser...');
         browser = await puppeteer.launch({
             headless: true,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-gpu', 
-                '--autoplay-policy=no-user-gesture-required', 
+                '--disable-gpu',
+                '--autoplay-policy=no-user-gesture-required',
                 `--window-size=${WIDTH},${HEIGHT}`
             ],
             defaultViewport: { width: WIDTH, height: HEIGHT }
@@ -131,14 +135,15 @@ async function startStream() {
         await page.goto(WS4KP_URL, { waitUntil: 'networkidle0' });
         console.log('[Puppeteer] Page loaded.');
 
-                const cdp = await page.target().createCDPSession();
+        const cdp = await page.target().createCDPSession();
+
         await cdp.send('Page.startScreencast', {
-            format: 'jpeg', 
+            format: 'jpeg',
             quality: 85,
         });
         console.log('[CDP] Screencast started.');
 
-                cdp.on('Page.screencastFrame', async ({ data, sessionId }) => {
+        cdp.on('Page.screencastFrame', async ({ data, sessionId }) => {
             try {
                 const frame = Buffer.from(data, 'base64');
 
@@ -155,7 +160,9 @@ async function startStream() {
         });
 
     } catch (err) {
-        console.error('[Streamer] A critical error occurred:', err.message);
+        console.error('[Streamer] A critical error occurred:');
+        console.error(err);
+
         if (browser) await browser.close();
         if (ffmpeg) ffmpeg.kill();
         process.exit(1);
